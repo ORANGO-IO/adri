@@ -1,0 +1,68 @@
+services:
+  api:
+    container_name: adri_evolution_api
+    image: atendai/evolution-api
+    restart: always
+    ports:
+      - "8888:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./data/evolution-api/store:/evolution/store
+      - ./data/evolution-api/instances:/evolution/instances
+
+  node-red:
+    container_name: adri_node_red
+    image: nodered/node-red
+    restart: unless-stopped
+    ports:
+      - "1880:1880"
+    environment:
+      -  TZ=America/Bahia
+    volumes:
+      - ./data/red:/data
+
+  redis:
+    container_name: adri_redis
+    image: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+
+  evolution-db:
+    container_name: adri_db
+    image: mongo/mongo:8.0.0-rc9-jammy
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - ./data/mongo-db:/data
+
+  typebot-db:
+    image: postgres:14-alpine
+    restart: always
+    volumes:
+      - ./data/psql-db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=typebot
+      - POSTGRES_PASSWORD=typebot
+
+  typebot-builder:
+    image: baptistearno/typebot-builder:latest
+    restart: always
+    depends_on:
+      - typebot-db
+    ports:
+      - '8080:3000'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    env_file: .env
+
+  typebot-viewer:
+    image: baptistearno/typebot-viewer:latest
+    restart: always
+    ports:
+      - '8081:3000'
+    env_file: .env
