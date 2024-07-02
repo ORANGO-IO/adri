@@ -1,44 +1,49 @@
 services:
-  api:
+  evolution-api:
     container_name: adri_evolution_api
     image: atendai/evolution-api
     restart: always
     ports:
       - "8888:8080"
-    env_file:
-      - .env
+    env_file: .env
     volumes:
       - ./data/evolution-api/store:/evolution/store
       - ./data/evolution-api/instances:/evolution/instances
+    depends_on:
+      - mongo
+      - evolution-redis
 
-  node-red:
-    container_name: adri_node_red
-    image: nodered/node-red
-    restart: unless-stopped
-    ports:
-      - "1880:1880"
-    environment:
-      -  TZ=America/Bahia
-    volumes:
-      - ./data/red:/data
-
-  redis:
-    container_name: adri_redis
+  evolution-redis:
+    container_name: adri_evolution_redis
     image: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - ./data/redis:/data
 
-  evolution-db:
-    container_name: adri_db
-    image: mongo/mongo:8.0.0-rc9-jammy
-    restart: unless-stopped
+  mongo:
+    container_name: adri_evolution_db
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_DB_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_DB_PASS}
     ports:
       - "27017:27017"
     volumes:
       - ./data/mongo-db:/data
+
+  # mongo-express:
+  #   image: mongo-express
+  #   restart: always
+  #   ports:
+  #     - 8081:8081
+  #   environment:
+  #     ME_CONFIG_MONGODB_ADMINUSERNAME: root
+  #     ME_CONFIG_MONGODB_ADMINPASSWORD: example
+  #     ME_CONFIG_MONGODB_URL: mongodb://${MONGO_DB_USER}:${MONGO_DB_PASS}@mongo:27017/
+  #     ME_CONFIG_BASICAUTH: false
+  #   depends_on:
+  #     - mongo
 
   typebot-db:
     image: postgres:14-alpine
@@ -46,8 +51,8 @@ services:
     volumes:
       - ./data/psql-db:/var/lib/postgresql/data
     environment:
-      - POSTGRES_DB=typebot
-      - POSTGRES_PASSWORD=typebot
+      - POSTGRES_DB=${POSTGRES_DB_NAME}
+      - POSTGRES_PASSWORD=${POSTGRES_DB_PASS}
 
   typebot-builder:
     image: baptistearno/typebot-builder:latest
@@ -55,7 +60,7 @@ services:
     depends_on:
       - typebot-db
     ports:
-      - '8080:3000'
+      - '3057:3000'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file: .env
@@ -64,5 +69,52 @@ services:
     image: baptistearno/typebot-viewer:latest
     restart: always
     ports:
-      - '8081:3000'
+      - '3056:3000'
     env_file: .env
+
+  chatwoot-base: &chatwoot-base
+    image: chatwoot/chatwoot:latest
+    env_file: .env.chatwoot
+    volumes:
+      - ./data/chatwoot/storage:/app/storage
+
+  chatwoot-rails:
+    <<: *chatwoot-base
+    depends_on:
+      - chatwoot-db
+      - chatwoot-redis
+    ports:
+      - '${CHATWOOT_PORT}:3000'
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+
+  sidekiq:
+    <<: *chatwoot-base
+    depends_on:
+      - chatwoot-db
+      - chatwoot-redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
+
+  chatwoot-db:
+    image: postgres:12
+    restart: always
+    env_file: .env.chatwoot
+    volumes:
+      - ./data/chatwoot/postgres:/var/lib/postgresql/data
+
+
+  chatwoot-redis:
+    image: redis:alpine
+    restart: always
+    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
+    env_file: .env
+    volumes:
+      - ./data/chatwoot/redis:/data
