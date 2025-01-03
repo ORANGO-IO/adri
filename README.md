@@ -8,6 +8,14 @@ dc run --rm chatwoot-rails bundle exec rake secret # para criar chave secreta
 dc up -d
 ```
 
+### Atualizando n8n
+
+```sh
+docker compose pull n8n
+docker compose down n8n
+docker compose up -d n8n
+```
+
 ### Atenção para configuração nginx
 
 Ver issue https://github.com/orgs/chatwoot/discussions/2149

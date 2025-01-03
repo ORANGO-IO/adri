@@ -1,17 +1,18 @@
 services:
   evolution-api:
     container_name: adri_evolution_api
-    image: atendai/evolution-api
+    image: atendai/evolution-api:latest
     restart: always
     ports:
       - "8888:8080"
     env_file: .env
     volumes:
-      - ./data/evolution-api/store:/evolution/store
       - ./data/evolution-api/instances:/evolution/instances
     depends_on:
-      - mongo
+      - db-adri
       - evolution-redis
+    networks:
+      - adri-network
 
   evolution-redis:
     container_name: adri_evolution_redis
@@ -19,40 +20,39 @@ services:
     restart: unless-stopped
     volumes:
       - ./data/redis:/data
+    networks:
+      - adri-network
 
-  mongo:
-    container_name: adri_evolution_db
-    image: mongo
-    restart: always
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_DB_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_DB_PASS}
-    ports:
-      - "27017:27017"
-    volumes:
-      - ./data/mongo-db:/data
-
-  typebot-db:
-    image: postgres:14-alpine
+  db-adri:
+    image: postgres:15-alpine
     restart: always
     volumes:
-      - ./data/psql-db:/var/lib/postgresql/data
+      - ./data/db:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    env_file: .env
     environment:
-      - POSTGRES_DB=${POSTGRES_DB_NAME}
       - POSTGRES_PASSWORD=${POSTGRES_DB_PASS}
+    networks:
+      - adri-network
+      - appsmith-network
+      - cloudbeaver
     ports:
-      - '5438:5432'
+      - "54324:5432"
 
   typebot-builder:
     image: baptistearno/typebot-builder:latest
     restart: always
     depends_on:
-      - typebot-db
+      - db-adri
     ports:
       - '3057:3000'
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     env_file: .env
+    environment:
+      - DATABASE_URL=${TYPEBOT_DATABASE_URL}
+    networks:
+      - adri-network
 
   typebot-viewer:
     image: baptistearno/typebot-viewer:latest
@@ -60,17 +60,23 @@ services:
     ports:
       - '3056:3000'
     env_file: .env
+    environment:
+      - DATABASE_URL=${TYPEBOT_DATABASE_URL}
+    networks:
+      - adri-network
 
   chatwoot-base: &chatwoot-base
     image: chatwoot/chatwoot:latest
     env_file: .env.chatwoot
     volumes:
       - ./data/chatwoot/storage:/app/storage
+    networks:
+      - adri-network
 
   chatwoot-rails:
     <<: *chatwoot-base
     depends_on:
-      - chatwoot-db
+      - db-adri
       - chatwoot-redis
     ports:
       - '${CHATWOOT_PORT}:3000'
@@ -80,24 +86,21 @@ services:
       - INSTALLATION_ENV=docker
     entrypoint: docker/entrypoints/rails.sh
     command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+    networks:
+      - adri-network
 
   sidekiq:
     <<: *chatwoot-base
     depends_on:
-      - chatwoot-db
+      - db-adri
       - chatwoot-redis
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
-
-  chatwoot-db:
-    image: postgres:12
-    restart: always
-    env_file: .env.chatwoot
-    volumes:
-      - ./data/chatwoot/postgres:/var/lib/postgresql/data
+    networks:
+      - adri-network
 
   chatwoot-redis:
     image: redis:alpine
@@ -106,6 +109,8 @@ services:
     env_file: .env
     volumes:
       - ./data/chatwoot/redis:/data
+    networks:
+      - adri-network
 
   n8n:
     image: docker.n8n.io/n8nio/n8n
@@ -117,7 +122,23 @@ services:
       - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - NODE_ENV=production
+      - N8N_TRUST_PROXY=true
+      - N8N_SMTP_HOST=${SMTP_HOST}
+      - N8N_SMTP_PORT=${SMTP_PORT}
+      - N8N_SMTP_USER=${SMTP_USERNAME}
+      - N8N_SMTP_PASS=${SMTP_PASSWORD}
+      - N8N_SMTP_SENDER="N8N <${SMTP_USERNAME}>"
       - WEBHOOK_URL=https://${N8N_SUBDOMAIN}.${DOMAIN_NAME}/
       - GENERIC_TIMEZONE=${TZ}
     volumes:
       - ./data/n8n:/home/node/.n8n
+    networks:
+      - adri-network
+
+networks:
+  adri-network:
+    driver: bridge
+  cloudbeaver:
+    external: true
+  appsmith-network:
+    external: true
