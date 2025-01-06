@@ -57,6 +57,8 @@ services:
   typebot-viewer:
     image: baptistearno/typebot-viewer:latest
     restart: always
+    depends_on:
+      - db-adri
     ports:
       - '3056:3000'
     env_file: .env
