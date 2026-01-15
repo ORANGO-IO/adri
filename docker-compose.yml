@@ -1,7 +1,7 @@
 services:
   evolution-api:
     container_name: adri_evolution_api
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     restart: always
     ports:
       - "8888:8080"
@@ -70,6 +70,7 @@ services:
   chatwoot-base: &chatwoot-base
     image: chatwoot/chatwoot:latest
     env_file: .env.chatwoot
+    restart: unless-stopped
     volumes:
       - ./data/chatwoot/storage:/app/storage
     networks:
@@ -115,7 +116,9 @@ services:
       - adri-network
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n
+    build:
+      context: .
+      dockerfile: Dockerfile.n8n
     restart: always
     ports:
       - "5678:5678"
@@ -132,14 +135,19 @@ services:
       - N8N_SMTP_SENDER="N8N <${SMTP_USERNAME}>"
       - WEBHOOK_URL=https://${N8N_SUBDOMAIN}.${DOMAIN_NAME}/
       - GENERIC_TIMEZONE=${TZ}
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - N8N_RUNNERS_ENABLED=true
     volumes:
       - ./data/n8n:/home/node/.n8n
     networks:
       - adri-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   adri-network:
     driver: bridge
+    name: adri-network
   cloudbeaver:
     external: true
   appsmith-network:
